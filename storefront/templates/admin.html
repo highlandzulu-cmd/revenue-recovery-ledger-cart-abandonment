@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <title>Recovery Agent — Live Events</title>
     <link rel="stylesheet" href="/static/style.css">
-    <meta http-equiv="refresh" content="8">
 </head>
 <body class="admin-body">
     <header class="site-header">
@@ -136,6 +135,15 @@
             <div class="dispatch-preview">
                 <div class="dispatch-preview-label">📞 Voice call script preview</div>
                 <div class="voice-preview">📞 {{ e.customer_message or "Agent would call to discuss completing the order." }}</div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button class="play-call-btn"
+                            data-customer-name="{{ e.case.customer_name }}"
+                            data-message="{{ e.customer_message or 'Agent would call to discuss completing the order.' }}"
+                            onclick="window.playRecoveryCall(this.dataset.customerName, this.dataset.message)">▶️ Play this call (simulated, browser voice)</button>
+                    <button class="play-call-btn" style="background:#2a1e12; border-color:#5a3d1f; color:#f5b971;"
+                            data-event-id="{{ e.event_id }}"
+                            onclick="window.placeRealCall(this.dataset.eventId, this)">☎️ Place a REAL call</button>
+                </div>
             </div>
             {% endif %}
 
@@ -154,5 +162,158 @@
         </div>
         {% endfor %}
     </main>
+
+    <div id="phone-overlay" class="phone-overlay" hidden>
+        <div class="phone-frame">
+            <div class="phone-notch"></div>
+            <div class="phone-sim-badge">Simulated call · browser voice</div>
+            <div class="phone-status-bar"><span>9:41</span><span>📶 🔋</span></div>
+            <div class="phone-screen">
+                <div id="phone-avatar" class="phone-avatar ringing">?</div>
+                <div id="phone-name" class="phone-name">—</div>
+                <div id="phone-sub" class="phone-sub">Recovery Agent calling…</div>
+                <div id="phone-timer" class="phone-timer" hidden>00:00</div>
+                <div id="phone-caption" class="phone-caption" hidden></div>
+                <div class="phone-controls">
+                    <button id="phone-decline" class="phone-btn decline" title="Decline">✕</button>
+                    <button id="phone-accept" class="phone-btn accept" title="Accept">📞</button>
+                    <button id="phone-end" class="phone-btn end" title="End call" hidden>📞</button>
+                </div>
+            </div>
+        </div>
+        <button class="phone-close-x" id="phone-close" title="Close">✕</button>
+    </div>
+
+    <script>
+        // Design Guideline - honesty about simulation: this reads the same
+        // customer_message the WhatsApp preview shows, out loud, using the
+        // browser's own text-to-speech (no telephony, no external API, no key
+        // needed) - the badge inside the call screen says exactly that. It's
+        // real audio, not a real phone call, and the UI never claims otherwise.
+        (function () {
+            let utterance = null;
+            let timerInterval = null;
+
+            // Replaces the old <meta http-equiv="refresh" content="8"> - that
+            // approach can't be reliably cancelled once its timer has already
+            // started counting down (removing the tag after the fact is a race:
+            // if the refresh fires between someone opening this page and
+            // clicking "Play call", the reload wins anyway). A plain interval we
+            // hold a reference to can actually be stopped and restarted on demand.
+            let autoRefreshTimer = setInterval(() => location.reload(), 8000);
+
+            // Shared with window.placeRealCall below (a separate, non-closure
+            // function) so both the simulated and real call flows pause the
+            // same timer rather than each managing their own.
+            window.pauseAutoRefresh = () => clearInterval(autoRefreshTimer);
+            window.resumeAutoRefresh = () => { autoRefreshTimer = setInterval(() => location.reload(), 8000); };
+
+            function pickVoice() {
+                const voices = window.speechSynthesis.getVoices();
+                return voices.find(v => v.lang && v.lang.toLowerCase().startsWith("hi"))
+                    || voices.find(v => v.lang && v.lang.toLowerCase() === "en-in")
+                    || voices.find(v => v.lang && v.lang.toLowerCase().startsWith("en"))
+                    || voices[0] || null;
+            }
+
+            function reset() {
+                window.speechSynthesis.cancel();
+                if (timerInterval) clearInterval(timerInterval);
+                document.getElementById("phone-avatar").classList.add("ringing");
+                document.getElementById("phone-sub").hidden = false;
+                document.getElementById("phone-sub").textContent = "Recovery Agent calling…";
+                document.getElementById("phone-timer").hidden = true;
+                document.getElementById("phone-timer").textContent = "00:00";
+                document.getElementById("phone-caption").hidden = true;
+                document.getElementById("phone-caption").textContent = "";
+                document.getElementById("phone-accept").hidden = false;
+                document.getElementById("phone-decline").hidden = false;
+                document.getElementById("phone-end").hidden = true;
+            }
+
+            window.playRecoveryCall = function (customerName, message) {
+                clearInterval(autoRefreshTimer);
+
+                const overlay = document.getElementById("phone-overlay");
+                document.getElementById("phone-avatar").textContent = customerName.charAt(0).toUpperCase();
+                document.getElementById("phone-name").textContent = customerName;
+                reset();
+                overlay.hidden = false;
+
+                document.getElementById("phone-accept").onclick = () => startCall(customerName, message);
+                document.getElementById("phone-decline").onclick = closeOverlay;
+                document.getElementById("phone-end").onclick = closeOverlay;
+                document.getElementById("phone-close").onclick = closeOverlay;
+            };
+
+            function startCall(customerName, message) {
+                document.getElementById("phone-avatar").classList.remove("ringing");
+                document.getElementById("phone-sub").hidden = true;
+                document.getElementById("phone-accept").hidden = true;
+                document.getElementById("phone-decline").hidden = true;
+                document.getElementById("phone-end").hidden = false;
+                const captionEl = document.getElementById("phone-caption");
+                captionEl.hidden = false;
+                captionEl.textContent = message;
+
+                let seconds = 0;
+                const timerEl = document.getElementById("phone-timer");
+                timerEl.hidden = false;
+                timerInterval = setInterval(() => {
+                    seconds++;
+                    const m = String(Math.floor(seconds / 60)).padStart(2, "0");
+                    const s = String(seconds % 60).padStart(2, "0");
+                    timerEl.textContent = m + ":" + s;
+                }, 1000);
+
+                utterance = new SpeechSynthesisUtterance(message);
+                const voice = pickVoice();
+                if (voice) utterance.voice = voice;
+                utterance.rate = 0.95;
+                utterance.onend = () => {
+                    document.getElementById("phone-sub").hidden = false;
+                    document.getElementById("phone-sub").textContent = "Call ended";
+                };
+                window.speechSynthesis.speak(utterance);
+            }
+
+            function closeOverlay() {
+                window.speechSynthesis.cancel();
+                if (timerInterval) clearInterval(timerInterval);
+                document.getElementById("phone-overlay").hidden = true;
+                autoRefreshTimer = setInterval(() => location.reload(), 8000);
+            }
+        })();
+
+        // Real call: an actual Twilio call to a real phone. Deliberately requires
+        // this explicit click - nothing in this app dials on its own.
+        window.placeRealCall = async function (eventId, btn) {
+            const original = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = "Calling…";
+            window.pauseAutoRefresh();
+            try {
+                const res = await fetch("/api/place-real-call", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: "event_id=" + encodeURIComponent(eventId),
+                });
+                const data = await res.json();
+                if (data.status === "calling") {
+                    btn.textContent = "✅ Calling now (SID " + data.call_sid.slice(0, 10) + "…)";
+                } else {
+                    btn.textContent = "⚠️ " + data.message;
+                    btn.title = data.message;
+                }
+            } catch (e) {
+                btn.textContent = "⚠️ Request failed: " + e.message;
+            }
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.textContent = original;
+                window.resumeAutoRefresh();
+            }, 6000);
+        };
+    </script>
 </body>
 </html>

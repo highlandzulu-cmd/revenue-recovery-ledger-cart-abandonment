@@ -5,5 +5,7 @@ razorpay
 python-dotenv
 fastapi
 uvicorn
+websockets
 jinja2
 python-multipart
+twilio

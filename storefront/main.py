@@ -10,20 +10,22 @@ project, then creates a real (test-mode) Razorpay link at the approved price.
 Run with:
     uvicorn storefront.main:app --reload --port 8000
 """
+import os
 import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Form, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import json
 import random
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from agent import cart_actions, cart_guardrails, cart_rules_baseline, razorpay_client
+from agent import cart_actions, cart_guardrails, cart_rules_baseline, razorpay_client, twilio_client, voice_conversation
 from storefront.products import CATEGORIES, PRODUCTS, PRODUCTS_BY_ID
 
 BASE_DIR = Path(__file__).parent
@@ -49,6 +51,8 @@ CONTACT_COUNTS: dict[str, int] = {}  # session_id -> how many times we've alread
                                       # Tracked server-side (not by the client) so a page
                                       # refresh can't reset a customer back to "first contact"
                                       # and bypass the no-discount-on-first-touch guardrail.
+VOICE_CALLS: dict[str, dict] = {}    # Twilio callSid -> {system_prompt, history} for a real,
+                                      # in-progress ConversationRelay call.
 
 
 def _get_or_create_session(request: Request) -> str:
@@ -300,3 +304,113 @@ def _confidence_calibration(events: list[dict]) -> list[dict]:
             "conversion_rate_pct": round(100 * converted / len(bucket)),
         })
     return rows
+
+
+@app.post("/api/place-real-call")
+async def place_real_call(request: Request, event_id: str = Form(...), to_number: str = Form(None)):
+    """Places a REAL outbound phone call (Twilio ConversationRelay) reading and
+    responding to the caller live via the AI - deliberately a separate, explicit
+    action from the guardrail-decided voice_call_high_value action itself (which
+    only ever drafts a script). Nothing here fires automatically off an event;
+    it only runs when this endpoint is called, which only happens when someone
+    clicks the real-call button in the admin UI.
+
+    Requires (see agent.twilio_client.place_conversation_relay_call): a
+    voice-capable TWILIO_VOICE_NUMBER, ConversationRelay accepted in the Twilio
+    console, and - since Twilio's servers connect INTO this app - this whole
+    service reachable at a real public https URL, not localhost.
+    """
+    event = next((e for e in RECOVERY_EVENTS if e["event_id"] == event_id), None)
+    if not event:
+        return JSONResponse({"status": "error", "message": "event not found"}, status_code=404)
+
+    to = to_number or os.environ.get("TEST_PHONE_NUMBER")
+    if not to:
+        return JSONResponse(
+            {"status": "error", "message": "No destination number - set TEST_PHONE_NUMBER "
+                                            "in .env, or pass one, and it must be a number "
+                                            "verified on this Twilio account."},
+            status_code=400,
+        )
+
+    case = event["case"]
+    case_context = {
+        "store_name": "Aura Store",
+        "customer_name": case["customer_name"],
+        "cart_value": event["original_amount"],
+        "item_names": [i["name"] for i in case.get("items", [])],
+        "discount_pct": event.get("discount_pct"),
+    }
+    system_prompt = voice_conversation.build_system_prompt(case_context)
+
+    if request.url.hostname in ("127.0.0.1", "localhost"):
+        return JSONResponse(
+            {"status": "error", "message": "This app is running on localhost - Twilio's "
+                                            "servers need to reach it over the public "
+                                            "internet to stream the call, so this only "
+                                            "works once deployed (e.g. to Render)."},
+            status_code=400,
+        )
+    websocket_url = f"wss://{request.url.hostname}/voice-relay"
+    greeting = f"Hi {case['customer_name']}, this is Aura Store calling about your cart."
+
+    try:
+        result = twilio_client.place_conversation_relay_call(
+            to_number=to,
+            websocket_url=websocket_url,
+            welcome_greeting=greeting,
+            custom_parameters={"event_id": event_id},
+        )
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+    VOICE_CALLS[event_id] = {"system_prompt": system_prompt, "history": []}
+    return JSONResponse({"status": "calling", "call_sid": result["sid"]})
+
+
+@app.websocket("/voice-relay")
+async def voice_relay(websocket: WebSocket):
+    """The live conversation loop for a real ConversationRelay call. Twilio's
+    servers connect here (not a browser), stream the caller's transcribed
+    speech as 'prompt' messages, and speak back whatever we send as 'text'
+    messages - see agent.voice_conversation for how each reply is generated,
+    and https://www.twilio.com/docs/voice/conversationrelay/websocket-messages
+    for the exact message protocol this implements.
+    """
+    await websocket.accept()
+    call_state = None
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            message = json.loads(raw)
+            msg_type = message.get("type")
+
+            if msg_type == "setup":
+                event_id = message.get("customParameters", {}).get("event_id")
+                call_state = VOICE_CALLS.get(event_id)
+                if call_state is None:
+                    # Nothing we recognize (e.g. a stale/unknown call) - answer
+                    # generically rather than dropping the connection outright.
+                    call_state = {
+                        "system_prompt": "You are a polite voice agent for Aura Store. "
+                                          "Keep replies to one short sentence.",
+                        "history": [],
+                    }
+
+            elif msg_type == "prompt" and message.get("last") and call_state is not None:
+                call_state["history"].append({"role": "user", "content": message["voicePrompt"]})
+                reply = voice_conversation.generate_reply(call_state["system_prompt"], call_state["history"])
+                call_state["history"].append({"role": "assistant", "content": reply})
+                await websocket.send_text(json.dumps({"type": "text", "token": reply, "last": True}))
+
+            elif msg_type == "interrupt" and call_state is not None:
+                # Caller talked over the agent - trim the last assistant turn down
+                # to what was actually heard, so the next reply doesn't act like
+                # the rest of the interrupted sentence was said.
+                heard = message.get("utteranceUntilInterrupt", "")
+                if call_state["history"] and call_state["history"][-1]["role"] == "assistant":
+                    call_state["history"][-1]["content"] = heard
+
+    except WebSocketDisconnect:
+        pass
