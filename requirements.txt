@@ -9,3 +9,4 @@ websockets
 jinja2
 python-multipart
 twilio
+requests

@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Form, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -25,7 +25,10 @@ import json
 import random
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from agent import cart_actions, cart_guardrails, cart_rules_baseline, razorpay_client, twilio_client, voice_conversation
+from agent import (
+    cart_actions, cart_guardrails, cart_rules_baseline, razorpay_client,
+    sarvam_client, twilio_client, voice_conversation,
+)
 from storefront.products import CATEGORIES, PRODUCTS, PRODUCTS_BY_ID
 
 BASE_DIR = Path(__file__).parent
@@ -304,6 +307,23 @@ def _confidence_calibration(events: list[dict]) -> list[dict]:
             "conversion_rate_pct": round(100 * converted / len(bucket)),
         })
     return rows
+
+
+@app.post("/api/tts")
+async def tts(text: str = Form(...)):
+    """Real Hinglish speech for the fake-call demo UI, via Sarvam AI (an Indian
+    voice-AI company whose models are built for this, unlike a generic English
+    voice mangling Hindi words). Falls back cleanly if unconfigured or it fails
+    - the caller (playRecoveryCall in admin.html) uses the browser's own TTS
+    in that case, so a missing key degrades quality, it never breaks the demo.
+    """
+    if not sarvam_client.is_configured():
+        return JSONResponse({"status": "unconfigured"}, status_code=404)
+    try:
+        audio_bytes = sarvam_client.synthesize(text)
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=502)
+    return Response(content=audio_bytes, media_type="audio/wav")
 
 
 @app.post("/api/place-real-call")

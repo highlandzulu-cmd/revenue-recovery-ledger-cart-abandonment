@@ -166,7 +166,7 @@
     <div id="phone-overlay" class="phone-overlay" hidden>
         <div class="phone-frame">
             <div class="phone-notch"></div>
-            <div class="phone-sim-badge">Simulated call · browser voice</div>
+            <div id="phone-voice-badge" class="phone-sim-badge">Simulated call</div>
             <div class="phone-status-bar"><span>9:41</span><span>📶 🔋</span></div>
             <div class="phone-screen">
                 <div id="phone-avatar" class="phone-avatar ringing">?</div>
@@ -192,6 +192,7 @@
         // real audio, not a real phone call, and the UI never claims otherwise.
         (function () {
             let utterance = null;
+            let currentAudio = null;
             let timerInterval = null;
 
             // Replaces the old <meta http-equiv="refresh" content="8"> - that
@@ -218,6 +219,7 @@
 
             function reset() {
                 window.speechSynthesis.cancel();
+                if (currentAudio) { currentAudio.pause(); currentAudio = null; }
                 if (timerInterval) clearInterval(timerInterval);
                 document.getElementById("phone-avatar").classList.add("ringing");
                 document.getElementById("phone-sub").hidden = false;
@@ -229,6 +231,7 @@
                 document.getElementById("phone-accept").hidden = false;
                 document.getElementById("phone-decline").hidden = false;
                 document.getElementById("phone-end").hidden = true;
+                document.getElementById("phone-voice-badge").textContent = "Simulated call";
             }
 
             window.playRecoveryCall = function (customerName, message) {
@@ -266,19 +269,49 @@
                     timerEl.textContent = m + ":" + s;
                 }, 1000);
 
+                speak(message);
+            }
+
+            function onSpeechDone() {
+                document.getElementById("phone-sub").hidden = false;
+                document.getElementById("phone-sub").textContent = "Call ended";
+            }
+
+            function speakWithBrowserTTS(message) {
                 utterance = new SpeechSynthesisUtterance(message);
                 const voice = pickVoice();
                 if (voice) utterance.voice = voice;
                 utterance.rate = 0.95;
-                utterance.onend = () => {
-                    document.getElementById("phone-sub").hidden = false;
-                    document.getElementById("phone-sub").textContent = "Call ended";
-                };
+                utterance.onend = onSpeechDone;
                 window.speechSynthesis.speak(utterance);
+            }
+
+            // Tries real Hinglish speech (Sarvam AI) first, falls back to the
+            // browser's own TTS on any failure - unconfigured key, network
+            // error, whatever. A quality upgrade, never a hard requirement.
+            async function speak(message) {
+                const badge = document.getElementById("phone-voice-badge");
+                try {
+                    const res = await fetch("/api/tts", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: "text=" + encodeURIComponent(message),
+                    });
+                    if (!res.ok) throw new Error("tts unavailable");
+                    const blob = await res.blob();
+                    currentAudio = new Audio(URL.createObjectURL(blob));
+                    currentAudio.onended = onSpeechDone;
+                    await currentAudio.play();
+                    badge.textContent = "🎙️ Sarvam AI voice";
+                } catch (e) {
+                    badge.textContent = "🔊 Browser voice (Sarvam not configured)";
+                    speakWithBrowserTTS(message);
+                }
             }
 
             function closeOverlay() {
                 window.speechSynthesis.cancel();
+                if (currentAudio) { currentAudio.pause(); currentAudio = null; }
                 if (timerInterval) clearInterval(timerInterval);
                 document.getElementById("phone-overlay").hidden = true;
                 autoRefreshTimer = setInterval(() => location.reload(), 8000);
