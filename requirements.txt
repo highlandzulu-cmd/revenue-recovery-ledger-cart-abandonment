@@ -1,0 +1,9 @@
+faker
+anthropic
+groq
+razorpay
+python-dotenv
+fastapi
+uvicorn
+jinja2
+python-multipart

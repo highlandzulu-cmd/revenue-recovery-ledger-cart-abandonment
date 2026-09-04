@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect your store — Recovery Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .onboard-wrap { max-width: 560px; margin: 80px auto; padding: 0 24px; }
+        .onboard-card {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+            padding: 32px; box-shadow: var(--shadow);
+        }
+        .onboard-field label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
+        .onboard-field input {
+            width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 11px 14px; color: var(--text); font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.9rem; margin-bottom: 16px;
+        }
+        .onboard-field input:focus-visible { outline: 2px solid var(--verdigris); outline-offset: 1px; }
+        .onboard-log { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; min-height: 1px; }
+        .onboard-log .step {
+            display: flex; align-items: center; gap: 10px; font-size: 0.9rem; color: var(--muted);
+            opacity: 0; transform: translateY(4px); transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .onboard-log .step.shown { opacity: 1; transform: translateY(0); }
+        .onboard-log .step.done { color: var(--text); }
+        .onboard-log .spinner {
+            width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+            border: 2px solid var(--border); border-top-color: var(--verdigris);
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .onboard-log .check { color: var(--verdigris); flex-shrink: 0; }
+        .onboard-cta { margin-top: 24px; opacity: 0; transition: opacity 0.4s ease; }
+        .onboard-cta.shown { opacity: 1; }
+        .onboard-note { color: var(--muted); font-size: 0.8rem; margin-top: 20px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+<div class="onboard-wrap">
+    <div class="masthead-left" style="margin-bottom: 24px;">
+        <div class="eyebrow">Merchant onboarding · demo</div>
+        <h1 style="font-size: 1.5rem;">Connect your store</h1>
+    </div>
+
+    <div class="onboard-card">
+        <div id="form-step">
+            <div class="onboard-field">
+                <label for="key-id">Razorpay Key ID</label>
+                <input id="key-id" type="text" placeholder="rzp_test_••••••••••••" autocomplete="off">
+            </div>
+            <button id="connect-btn" class="btn primary" style="width:100%;">Connect Razorpay account</button>
+        </div>
+        <div class="onboard-log" id="onboard-log"></div>
+        <div class="onboard-cta" id="onboard-cta">
+            <a href="/" class="btn primary" style="width:100%; display:block; text-align:center; text-decoration:none; box-sizing:border-box;">Go to dashboard →</a>
+        </div>
+    </div>
+
+    <p class="onboard-note">
+        This is a scripted demo of the onboarding flow, not a real Razorpay OAuth connection — no key you
+        type here is sent anywhere. The numbers it reveals ({{ stats.batch_size }} cases, ₹{{ "{:,.0f}".format(stats.total_at_risk_inr) }} at risk)
+        are real: the same dataset the dashboard itself reads, not invented for this page. The point it's
+        making is architectural — a real integration needs nothing from the merchant but this one key; every
+        failed payment, retry, message, and payment link already flows entirely off of it.
+    </p>
+</div>
+
+<script>
+    (function () {
+        const steps = [
+            { text: "Connecting to Razorpay test account…", done: "Connected to Razorpay test account", delay: 700 },
+            { text: "Scanning failed payments from the last 30 days…", done: "Found {{ stats.batch_size }} failed payments worth ₹{{ "{:,.0f}".format(stats.total_at_risk_inr) }}", delay: 1100 },
+            { text: "Loading guardrails (compliance caps, contact limits, cost rules)…", done: "Guardrails loaded", delay: 900 },
+            { text: "Activating recovery agent…", done: "Agent live — awaiting your go-ahead, nothing sent yet", delay: 900 },
+        ];
+
+        const btn = document.getElementById("connect-btn");
+        const input = document.getElementById("key-id");
+        const log = document.getElementById("onboard-log");
+        const cta = document.getElementById("onboard-cta");
+        const formStep = document.getElementById("form-step");
+
+        btn.addEventListener("click", () => {
+            formStep.style.display = "none";
+            run(0);
+        });
+
+        function run(i) {
+            if (i >= steps.length) {
+                cta.classList.add("shown");
+                return;
+            }
+            const row = document.createElement("div");
+            row.className = "step";
+            row.innerHTML = '<span class="spinner"></span><span class="label">' + steps[i].text + '</span>';
+            log.appendChild(row);
+            requestAnimationFrame(() => row.classList.add("shown"));
+
+            setTimeout(() => {
+                row.classList.add("done");
+                row.innerHTML = '<span class="check">✅</span><span class="label">' + steps[i].done + '</span>';
+                run(i + 1);
+            }, steps[i].delay);
+        }
+    })();
+</script>
+</body>
+</html>

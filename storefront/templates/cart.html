@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Your Cart — Aura Store{% endblock %}
+{% block content %}
+<h1>Your Cart</h1>
+{% if lines %}
+<table class="cart-table">
+    <thead><tr><th></th><th>Item</th><th>Qty</th><th>Price</th></tr></thead>
+    <tbody>
+        {% for l in lines %}
+        <tr>
+            <td>{{ l.emoji }}</td>
+            <td>{{ l.name }}</td>
+            <td>{{ l.qty }}</td>
+            <td>₹{{ "%.2f"|format(l.line_total) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<p class="cart-total">Total: ₹{{ "%.2f"|format(total) }}</p>
+<a href="/checkout" class="btn btn-primary" style="display:inline-block;width:auto;padding:12px 32px;">Proceed to Checkout</a>
+{% else %}
+<p>Your cart is empty. <a href="/">Go shopping</a>.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if lines %}
+<script>
+    // Tracked here too (not just checkout.html) so the demo can show the
+    // agent's cart_only diagnosis - "early browsing, don't push it" - not just
+    // the payment_page_opened/otp_pending branches reachable from checkout.
+    window.RECOVERY_AGENT_CONFIG = {
+        sessionId: "{{ session_id }}",
+        cartValue: {{ total }},
+        customerName: "{{ customer.name }}",
+        customerPhone: "{{ customer.phone }}",
+        abandonmentStage: "cart_only",
+        minTimeOnPageSeconds: 3,
+        inactivitySeconds: 8,
+        graceSeconds: 8,
+        payButtonId: "__no-pay-button-on-this-page__",
+    };
+</script>
+<script src="/static/recovery-agent.js"></script>
+{% endif %}
+{% endblock %}

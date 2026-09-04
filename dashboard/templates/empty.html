@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Recovery Agent Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="empty-page">
+        <h1>No batch results yet</h1>
+        <p style="color:var(--muted); margin-top:12px;">Run the pipeline first, then reload this page.</p>
+        <code>python -m agent.pipeline --live-groq --with-razorpay</code>
+        <form class="rerun-form" method="post" action="/rerun" style="justify-content:center; margin-top:24px;">
+            <button class="btn primary" name="mode" value="mock">Run offline mock batch now</button>
+        </form>
+    </div>
+</body>
+</html>

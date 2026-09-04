@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+
+# Synthetic demo data (Faker-generated, no real PII) is committed on purpose -
+# data/failed_payments.json and data/results.json ship with the repo so a fresh
+# clone (or a deploy) has a populated dashboard immediately, without needing a
+# live pipeline run (and its API quota) just to see something. Anything else
+# written under data/ at runtime still isn't tracked.
+data/*.json
+!data/failed_payments.json
+!data/results.json

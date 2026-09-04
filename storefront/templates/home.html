@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Aura Store — Shop{% endblock %}
+{% block content %}
+<div class="hero">
+    <h1>Welcome back, {{ customer.name.split(' ')[0] }} 👋</h1>
+    <p>Here's what's trending this week — free delivery on all orders.</p>
+</div>
+
+<div class="category-pills">
+    {% for c in categories %}
+    <span class="category-pill">{{ c }}</span>
+    {% endfor %}
+</div>
+
+<div class="product-grid">
+    {% for p in products %}
+    <div class="product-card">
+        <div class="product-image">{{ p.emoji }}</div>
+        <div class="product-category">{{ p.category }}</div>
+        <h3>{{ p.name }}</h3>
+        <p class="product-desc">{{ p.description }}</p>
+        <p class="product-rating">{{ "★" * (p.rating|round(0, 'floor')|int) }}{{ "☆" * (5 - (p.rating|round(0, 'floor')|int)) }}<span>{{ p.rating }}</span></p>
+        <p class="product-price">₹{{ "%.2f"|format(p.price) }}</p>
+        <form method="post" action="/cart/add">
+            <input type="hidden" name="product_id" value="{{ p.id }}">
+            <button type="submit" class="btn btn-primary">Add to Cart</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

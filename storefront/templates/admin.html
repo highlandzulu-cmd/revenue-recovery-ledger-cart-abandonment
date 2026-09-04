@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Recovery Agent — Live Events</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <meta http-equiv="refresh" content="8">
+</head>
+<body class="admin-body">
+    <header class="site-header">
+        <a href="/" class="logo">✨ Aura Store</a>
+        <span class="admin-badge"><span class="live-dot"></span> Recovery Agent — Live Operations</span>
+    </header>
+    <main class="content">
+        <h1>Abandonment Recovery — Live Feed</h1>
+        <p class="checkout-hint">Auto-refreshes every 8s. Go abandon a checkout to see the agent react in real time.</p>
+
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-label">Events Processed</div>
+                <div class="stat-value">{{ stats.total_events }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Recovered</div>
+                <div class="stat-value">₹{{ "{:,.0f}".format(stats.total_recovered) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Spent (discounts + cost)</div>
+                <div class="stat-value">₹{{ "{:,.0f}".format(stats.total_cost) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">ROI</div>
+                <div class="stat-value">{% if stats.roi_multiple is not none %}{{ "%.1f"|format(stats.roi_multiple) }}×{% else %}—{% endif %}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Real Razorpay Links</div>
+                <div class="stat-value">{{ stats.real_links }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Guardrails Fired</div>
+                <div class="stat-value">{{ stats.guardrail_hits }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Beat the Baseline</div>
+                <div class="stat-value">{{ stats.baseline_disagreements }}</div>
+            </div>
+        </div>
+
+        {% if calibration_buckets %}
+        <section style="margin-bottom:32px;">
+            <div class="dispatch-preview-label" style="margin-bottom:10px;">📐 Confidence calibration — does stated confidence track real outcomes?</div>
+            <div class="meta-row">
+                {% for b in calibration_buckets %}
+                <span class="pill">{{ b.label }} confidence → {{ b.conversion_rate_pct }}% converted <span style="color:#4b5162;">(n={{ b.n }})</span></span>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if not events %}
+        <div class="empty-state">
+            <p>No events yet.</p>
+            <p>Go to the store, add something to your cart, start checkout, and just wait.</p>
+        </div>
+        {% endif %}
+
+        {% for e in events %}
+        <div class="event-card">
+            <div class="event-header">
+                <div class="event-avatar">{{ e.case.customer_name[0] }}</div>
+                <div class="event-who">
+                    <strong>{{ e.case.customer_name }}</strong>
+                    <span>Cart {{ e.case.cart_id[:8] }} · {{ e.case.customer_phone }}</span>
+                </div>
+                <span class="event-time">{{ e.processed_at[11:19] }} UTC</span>
+            </div>
+
+            <div class="meta-row">
+                <span class="pill">📍 {{ e.case.abandonment_stage.replace('_', ' ') }}</span>
+                <span class="pill">🛒 ₹{{ "%.2f"|format(e.original_amount) }}</span>
+                {% if e.case.is_repeat_customer %}<span class="pill">🔁 Returning customer</span>
+                {% else %}<span class="pill">🆕 First-time customer</span>{% endif %}
+                <span class="pill">📨 Contact #{{ e.case.contact_count + 1 }}</span>
+            </div>
+
+            <div class="action-flow">
+                <span class="action-badge {{ {
+                    'send_reminder_no_offer': 'no-offer',
+                    'send_reminder_with_discount': 'discount',
+                    'send_reminder_free_shipping': 'free-shipping',
+                    'voice_call_high_value': 'voice',
+                    'no_action': 'no-action',
+                }.get(e.proposed_action, 'no-offer') }}">{{ e.proposed_action.replace('_', ' ') }}</span>
+                {% if e.proposed_action != e.final_action %}
+                <span class="action-arrow">→</span>
+                <span class="action-badge {{ {
+                    'send_reminder_no_offer': 'no-offer',
+                    'send_reminder_with_discount': 'discount',
+                    'send_reminder_free_shipping': 'free-shipping',
+                    'voice_call_high_value': 'voice',
+                    'no_action': 'no-action',
+                }.get(e.final_action, 'no-offer') }}">{{ e.final_action.replace('_', ' ') }}</span>
+                {% endif %}
+                {% if e.confidence %}<span class="confidence-badge">confidence {{ "%.0f"|format(e.confidence * 100) }}%</span>{% endif %}
+            </div>
+
+            <div class="meta-row">
+                <span class="pill {{ 'good' if not e.baseline_agree else '' }}">
+                    🤖 vs rules-baseline:
+                    {% if e.baseline_agree %}agreed ({{ e.baseline_action.replace('_',' ') }})
+                    {% else %}baseline would've said "{{ e.baseline_action.replace('_',' ') }}" — AI disagreed{% endif %}
+                </span>
+                <span class="pill {{ 'good' if e.outcome == 'converted' else '' }}">
+                    {% if e.outcome == 'converted' %}✅ converted{% elif e.outcome == 'no_action_taken' %}— no action needed{% else %}❌ ignored{% endif %}
+                </span>
+            </div>
+
+            {% if e.guardrail_overridden %}
+            <div class="guardrail-alert">⚠️ <span>{{ e.guardrail_reason }}</span></div>
+            {% endif %}
+
+            {% if e.discount_pct %}
+            <div class="meta-row">
+                <span class="pill">💸 {{ e.discount_pct }}% off → ₹{{ "%.2f"|format(e.final_amount) }} (was ₹{{ "%.2f"|format(e.original_amount) }})</span>
+            </div>
+            {% endif %}
+
+            <p class="reasoning-block">{{ e.reasoning }}</p>
+
+            {% if e.customer_message and e.dispatch_channel == 'whatsapp' %}
+            <div class="dispatch-preview">
+                <div class="dispatch-preview-label">💬 WhatsApp message preview</div>
+                <div class="whatsapp-bubble">{{ e.customer_message }}</div>
+            </div>
+            {% elif e.dispatch_channel == 'voice' %}
+            <div class="dispatch-preview">
+                <div class="dispatch-preview-label">📞 Voice call script preview</div>
+                <div class="voice-preview">📞 {{ e.customer_message or "Agent would call to discuss completing the order." }}</div>
+            </div>
+            {% endif %}
+
+            <div class="event-footer">
+                <span class="dispatch-status-badge {% if e.dispatch_status == 'simulated' %}simulated{% elif e.dispatch_status == 'sent' %}sent{% else %}none{% endif %}">
+                    {% if e.dispatch_status == 'simulated' %}🔧 Simulated — Twilio not connected
+                    {% elif e.dispatch_status == 'sent' %}✅ Sent via {{ e.dispatch_channel }}
+                    {% else %}— no action needed{% endif %}
+                </span>
+                {% if e.razorpay_link %}
+                <a href="{{ e.razorpay_link }}" target="_blank" class="razorpay-pill">🔗 Real payment link</a>
+                {% elif e.razorpay_error %}
+                <span class="pill">⚠️ Razorpay: {{ e.razorpay_error[:60] }}</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </main>
+</body>
+</html>

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Checkout — Aura Store{% endblock %}
+{% block content %}
+<h1>Checkout</h1>
+<div class="checkout-layout">
+    <div class="checkout-summary">
+        <h3>Order Summary</h3>
+        <ul>
+            {% for l in lines %}
+            <li>{{ l.emoji }} {{ l.name }} × {{ l.qty }} — ₹{{ "%.2f"|format(l.line_total) }}</li>
+            {% endfor %}
+        </ul>
+        <p class="cart-total">Total: ₹{{ "%.2f"|format(total) }}</p>
+    </div>
+    <div class="checkout-form">
+        <h3>Deliver &amp; Pay</h3>
+        <div class="identity-card">
+            <div class="identity-avatar">{{ customer.name[0] }}</div>
+            <div class="identity-details">
+                <strong>{{ customer.name }}</strong>
+                <span>{{ customer.phone }} · {% if customer.is_repeat_customer %}Returning customer{% else %}First order{% endif %}</span>
+            </div>
+        </div>
+        <button id="pay-btn" class="btn btn-primary" data-label="Pay ₹{{ '%.2f'|format(total) }}">Pay ₹{{ "%.2f"|format(total) }}</button>
+        <div id="otp-section" hidden>
+            <p class="checkout-hint" style="margin-top:20px;">We've sent a verification code to {{ customer.phone }}. Enter it to complete payment.</p>
+            <input id="otp-input" type="text" inputmode="numeric" placeholder="6-digit code" maxlength="6"
+                   style="width:100%;padding:11px 14px;border:1px solid var(--border);border-radius:10px;font-size:0.95rem;margin-bottom:12px;box-sizing:border-box;">
+            <button id="otp-submit-btn" class="btn btn-primary">Verify &amp; Pay</button>
+        </div>
+        <p class="checkout-hint">
+            You're checked out with the details already on your account — no need to
+            re-enter anything. (Demo note: timers below are sped up for testing; a
+            real deployment waits ~15-25 minutes, not seconds, before any contact,
+            and never messages you if you just briefly switch tabs. The OTP step is
+            a fake stand-in too, used to demo the agent's otp_pending diagnosis - a
+            stall here reads as checkout friction, not price hesitation, and the
+            agent responds differently than it would at the payment step.)
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.RECOVERY_AGENT_CONFIG = {
+        sessionId: "{{ session_id }}",
+        cartValue: {{ total }},
+        customerName: "{{ customer.name }}",
+        customerPhone: "{{ customer.phone }}",
+        abandonmentStage: "payment_page_opened",
+        // Demo-fast values so the flow is watchable live. recovery-agent.js's own
+        // defaults (minutes, not seconds) are what a real deployment should use.
+        minTimeOnPageSeconds: 3,
+        inactivitySeconds: 8,
+        graceSeconds: 8,
+        // The true final action is submitting the OTP, not clicking "Pay" - Pay
+        // just reveals that step. Pointing the tracker's stop-on-payment listener
+        // at otp-submit-btn (not pay-btn) means a stall AT the OTP step still
+        // gets tracked and reported as otp_pending, instead of being silently
+        // treated as "payment attempted, stop watching."
+        payButtonId: "otp-submit-btn",
+    };
+</script>
+<script src="/static/recovery-agent.js"></script>
+<script>
+    // Design Guideline - Feedback: "Show people when a command can't be carried
+    // out and help them understand why." This demo doesn't complete a real
+    // payment, so the final action gets an honest, visible state instead of
+    // doing nothing - a dead click reads as broken, not as "working as intended."
+    (function () {
+        const payBtn = document.getElementById("pay-btn");
+        const otpSection = document.getElementById("otp-section");
+        const otpBtn = document.getElementById("otp-submit-btn");
+        if (!payBtn || !otpSection || !otpBtn) return;
+
+        payBtn.addEventListener("click", () => {
+            payBtn.hidden = true;
+            otpSection.hidden = false;
+            document.getElementById("otp-input").focus();
+            // Reclassify what a stall from here on means to the recovery agent -
+            // reaching this step and going quiet is checkout friction, not the
+            // price hesitation a stall at the Pay button would suggest.
+            window.RECOVERY_AGENT_CONFIG.abandonmentStage = "otp_pending";
+        });
+
+        otpBtn.addEventListener("click", () => {
+            otpBtn.disabled = true;
+            otpBtn.style.opacity = "0.7";
+            otpBtn.style.cursor = "default";
+            otpBtn.textContent = "Payment not wired up in this demo";
+        });
+    })();
+</script>
+{% endblock %}

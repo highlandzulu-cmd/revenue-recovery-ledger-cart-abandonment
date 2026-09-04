@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recovery Agent Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+
+    <div class="masthead">
+        <div class="masthead-left">
+            <div class="eyebrow">Track 03 · Failed-Payment Recovery Agent</div>
+            <h1>Recovery Agent — Batch Report</h1>
+            <a href="/connect" style="font-size:0.85rem; color:var(--muted);">↳ See the merchant onboarding demo</a>
+        </div>
+        <form class="rerun-form" id="rerun-form" method="post" action="/rerun">
+            <button class="btn" name="mode" value="mock">Re-run (mock)</button>
+            <button class="btn primary" name="mode" value="groq">Re-run (live Groq)</button>
+        </form>
+    </div>
+
+    <div class="stat-strip">
+        <div class="stat-box"><span class="v">{{ stats.batch_size }}</span><span class="k">Cases</span></div>
+        <div class="stat-box"><span class="v">₹{{ "{:,.0f}".format(stats.total_at_risk_inr) }}</span><span class="k">At risk</span></div>
+        <div class="stat-box"><span class="v">₹{{ "{:,.0f}".format(stats.total_recovered_inr) }}</span><span class="k">Recovered</span></div>
+        <div class="stat-box"><span class="v">{{ stats.recovery_rate_pct }}%</span><span class="k">Recovery rate</span></div>
+        <div class="stat-box"><span class="v">{{ stats.guardrail_interventions }}</span><span class="k">Guardrails fired</span></div>
+        <div class="stat-box"><span class="v">{{ stats.escalations_to_human }}</span><span class="k">Escalated</span></div>
+        <div class="stat-box"><span class="v">{{ stats.card_compromised_caught }}</span><span class="k">Card-compromise catches</span></div>
+        <div class="stat-box"><span class="v">{{ stats.dispute_claims_caught }}</span><span class="k">Fraud claims caught</span></div>
+        <div class="stat-box"><span class="v">{{ stats.decision_fallbacks }}</span><span class="k">Decision fallbacks</span></div>
+    </div>
+
+    {% if calibration_buckets %}
+    <section>
+        <div class="section-head"><h2>📐 Confidence vs. outcome</h2></div>
+        <p class="section-note">Every case carries a stated confidence (0-100%). This is a coarse check on
+        whether that number tracks anything real: does the high-confidence bucket recover money more often
+        than the low-confidence one? Note this isn't diagnostic accuracy — the dataset only has a
+        ground-truth label for 8 of 60 cases, too sparse to calibrate against directly — recovery also
+        depends on customer behavior the AI doesn't control, so read this as a directional signal, not proof.</p>
+        <div class="bar-group">
+            {% for b in calibration_buckets %}
+            <div class="bar-row">
+                <span class="label">{{ b.label }} confidence (n={{ b.n }})</span>
+                <div class="bar-track"><div class="bar-fill" style="width:{{ b.recovery_rate_pct }}%"></div></div>
+                <span class="count">{{ b.recovery_rate_pct }}%</span>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <section>
+        <div class="section-head"><h2>Breakdown</h2></div>
+        <div class="two-col">
+            <div>
+                <p class="section-note" style="margin-top:0;">Root cause diagnosed</p>
+                <div class="bar-group">
+                    {% for name, n, pct in root_cause_counts %}
+                    <div class="bar-row">
+                        <span class="label">{{ name.replace('_',' ') }}</span>
+                        <div class="bar-track"><div class="bar-fill" style="width:{{ pct }}%"></div></div>
+                        <span class="count">{{ n }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div>
+                <p class="section-note" style="margin-top:0;">Final action taken</p>
+                <div class="bar-group">
+                    {% for name, n, pct in action_counts %}
+                    <div class="bar-row">
+                        <span class="label">{{ name.replace('_',' ') }}</span>
+                        <div class="bar-track"><div class="bar-fill" style="width:{{ pct }}%"></div></div>
+                        <span class="count">{{ n }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="section-head"><h2>🩺 Root-cause diagnosis — AI vs. enum-only baseline</h2></div>
+        <p class="section-note">The baseline maps <code>failure_code</code> straight to an action. The AI reads
+        <code>bank_decline_message</code> — the actual raw text — which is the only way to tell a routine
+        decline apart from a compromised card filed under the same generic label.</p>
+        {% if diagnosis_disagreements %}
+            {% for r in diagnosis_disagreements %}
+            <div class="entry {{ 'rust' if r.root_cause == 'card_compromised' else '' }}">
+                <span class="entry-label">{{ r.case_id }} · {{ r.failure_code }}</span>
+                <p class="quote">"{{ r.bank_decline_message }}"</p>
+                <div class="arrow-line">
+                    <span class="tag bad">baseline → {{ r.baseline_root_cause }}</span>
+                    <span>→</span>
+                    <span class="tag good">AI → {{ r.root_cause }}</span>
+                    {% if r.confidence %}<span class="tag">confidence {{ "%.0f"|format(r.confidence*100) }}%</span>{% endif %}
+                </div>
+                <p class="entry-note">{{ r.reasoning }}</p>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-note">No disagreements in this batch — run a live batch (Groq) to compare against the free-text-reading agent.</div>
+        {% endif %}
+    </section>
+
+    <section>
+        <div class="section-head"><h2>🔍 Customer reply interpretation — AI vs. keyword rules</h2></div>
+        <p class="section-note">Both engines read the same free-text reply. The keyword baseline is what a simple
+        rules engine can catch; the disagreements are what it can't.</p>
+        {% if reply_disagreements %}
+            {% for r in reply_disagreements %}
+            <div class="entry {{ 'rust' if r.reply_ai_intent == 'dispute_fraud_claim' else 'amber' }}">
+                <span class="entry-label">{{ r.case_id }}</span>
+                <p class="quote">"{{ r.customer_reply }}"</p>
+                <div class="arrow-line">
+                    <span class="tag bad">baseline → {{ r.reply_baseline_intent }}</span>
+                    <span>→</span>
+                    <span class="tag good">AI → {{ r.reply_ai_intent }}</span>
+                </div>
+                <p class="entry-note">{{ r.reply_ai_reasoning }}</p>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-note">No disagreements in this batch.</div>
+        {% endif %}
+    </section>
+
+    <section>
+        <div class="section-head"><h2>⚠️ Guardrail interventions</h2></div>
+        <p class="section-note">Cases where the agent's proposed action was blocked or downgraded by hard-coded
+        compliance/cost code — this is "bounded and gated" in practice, not just in the pitch.</p>
+        {% if guardrail_hits %}
+            {% for r in guardrail_hits %}
+            <div class="entry amber">
+                <span class="entry-label">{{ r.case_id }} · {{ r.customer_name }}</span>
+                <div class="arrow-line">
+                    <span class="tag bad">{{ r.proposed_action }}</span>
+                    <span>→</span>
+                    <span class="tag good">{{ r.final_action }}</span>
+                </div>
+                <p class="entry-note">{{ r.guardrail_reason }}</p>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-note">No guardrail interventions in this batch.</div>
+        {% endif %}
+    </section>
+
+    <section>
+        <div class="section-head"><h2>🤝 Promise-to-pay tracking</h2></div>
+        <div class="promise-strip">
+            <div class="stat-box"><span class="v">{{ stats.promises_made }}</span><span class="k">Promises made</span></div>
+            <div class="stat-box"><span class="v">{{ stats.promises_kept }}</span><span class="k">Kept</span></div>
+            <div class="stat-box"><span class="v">{{ stats.promises_broken }}</span><span class="k">Broken → escalated</span></div>
+        </div>
+        {% if promised %}
+        <div class="table-wrap">
+        <table>
+            <thead><tr><th>Case</th><th>Customer</th><th>Due</th><th>Resolution</th><th>Recovered</th></tr></thead>
+            <tbody>
+            {% for r in promised %}
+                <tr>
+                    <td><code>{{ r.case_id }}</code></td>
+                    <td>{{ r.customer_name }}</td>
+                    <td>{{ r.promise_due_date }}</td>
+                    <td><span class="pill {{ 'good' if r.promise_resolution == 'kept' else 'bad' }}">{{ r.promise_resolution }}</span></td>
+                    <td>₹{{ "%.2f"|format(r.amount_recovered) }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% else %}
+        <div class="empty-note">No promise-to-pay cases in this batch.</div>
+        {% endif %}
+    </section>
+
+    <section>
+        <div class="section-head"><h2>All cases</h2></div>
+        <p class="section-note">Click a row for the full reasoning trail.</p>
+        <div class="table-wrap">
+        <details class="case-row" open>
+            <summary style="color:var(--muted); font-size:0.85rem; text-transform:uppercase; letter-spacing:0.04em; cursor:default;">
+                <span>Case</span><span>Customer</span><span>Diagnosis</span><span>Amount</span><span>Outcome</span>
+            </summary>
+        </details>
+        {% for r in results %}
+        <details class="case-row">
+            <summary>
+                <code>{{ r.case_id }}</code>
+                <span>{{ r.customer_name }} <span style="color:var(--muted);">({{ r.subscription_tier }})</span></span>
+                <span class="pill {{ 'bad' if r.root_cause == 'card_compromised' else '' }}">{{ r.root_cause.replace('_',' ') }}</span>
+                <span>₹{{ "%.2f"|format(r.amount_inr) }}</span>
+                <span class="pill {{ 'good' if r.amount_recovered > 0 else '' }}">{{ r.final_action.replace('_',' ') }}</span>
+            </summary>
+            <div class="case-detail">
+                <dl class="kv">
+                    <dt>Failure code</dt><dd>{{ r.failure_code }}</dd>
+                    {% if r.bank_decline_message %}<dt>Bank message</dt><dd>"{{ r.bank_decline_message }}"</dd>{% endif %}
+                    <dt>Confidence</dt><dd>{{ "%.0f"|format(r.confidence*100) if r.confidence else "—" }}%</dd>
+                    <dt>Proposed → Final</dt><dd><code>{{ r.proposed_action }}</code> → <code>{{ r.final_action }}</code></dd>
+                    {% if r.guardrail_overridden %}<dt>Guardrail</dt><dd style="color:var(--amber);">{{ r.guardrail_reason }}</dd>{% endif %}
+                    <dt>Outcome</dt><dd>{{ r.outcome }} · ₹{{ "%.2f"|format(r.amount_recovered) }} recovered</dd>
+                    {% if r.razorpay_link_url and not r.razorpay_link_url.startswith('[razorpay') %}
+                    <dt>Payment link</dt><dd><a href="{{ r.razorpay_link_url }}" target="_blank">{{ r.razorpay_link_url }}</a></dd>
+                    {% endif %}
+                </dl>
+                <p style="color:var(--muted); font-size:0.86rem;">{{ r.reasoning }}</p>
+                {% if r.customer_message %}<div class="msg">{{ r.customer_message }}</div>{% endif %}
+            </div>
+        </details>
+        {% endfor %}
+        </div>
+    </section>
+
+</div>
+<script>
+    // Design Guideline - Feedback: "Show people when a command can't be carried
+    // out and help them understand why." A live Groq batch takes several
+    // minutes (60 cases, paced ~5.5s each to stay under the free-tier rate
+    // limit) and this is a plain form POST - with no visible state change the
+    // click looks dead the whole time. Give it one instead.
+    (function () {
+        const form = document.getElementById("rerun-form");
+        if (!form) return;
+        form.addEventListener("submit", (e) => {
+            const clicked = e.submitter;
+            if (!clicked) return;
+            for (const btn of form.querySelectorAll("button")) btn.disabled = true;
+            clicked.textContent = clicked.value === "groq"
+                ? "Running live batch… (~5-8 min, page reloads when done)"
+                : "Running…";
+            clicked.style.opacity = "0.75";
+            clicked.style.cursor = "wait";
+        });
+    })();
+</script>
+</body>
+</html>

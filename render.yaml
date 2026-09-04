@@ -1,0 +1,35 @@
+# Render blueprint - deploys both apps from this one repo.
+# On render.com: New -> Blueprint -> pick this repo -> Render finds this file and
+# creates both services below -> fill in the envVars marked sync:false (your real
+# keys, never committed) -> Apply. Free plan is enough for a demo (cold starts
+# after ~15 min idle - hit both URLs a minute before you actually need them live).
+services:
+  - type: web
+    name: recovery-agent-dashboard
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn dashboard.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+
+  - type: web
+    name: recovery-agent-storefront
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn storefront.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
