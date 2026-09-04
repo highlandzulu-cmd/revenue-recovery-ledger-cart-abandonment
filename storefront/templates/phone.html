@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Incoming Call</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {
+            background: #000; margin: 0; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .standby {
+            color: rgba(255,255,255,0.35); font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 0.9rem; text-align: center; line-height: 1.6;
+        }
+        .standby button {
+            margin-top: 16px; background: #1c1f28; border: 1px solid #2a2e39; color: #8b9298;
+            padding: 8px 18px; border-radius: 999px; cursor: pointer; font-size: 0.85rem;
+        }
+        .standby button:hover { color: #d8b4fe; border-color: #5b3d73; }
+    </style>
+</head>
+<body>
+    <div class="standby">
+        Open this next to the storefront - it rings on its own the moment a<br>
+        real cart-abandonment call decision comes in, no refresh needed.
+        <br><button id="preview-call-btn" type="button">🎬 Preview call</button>
+    </div>
+    {% include "_incoming_call.html" %}
+    <script src="/static/incoming-call.js"></script>
+</body>
+</html>

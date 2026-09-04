@@ -132,6 +132,17 @@ def checkout(request: Request):
     return response
 
 
+@app.get("/phone", response_class=HTMLResponse)
+def phone_screen(request: Request):
+    """Standalone 'customer's phone' screen - no storefront chrome, just the
+    call UI. Open it in its own window/tab next to the storefront for a demo
+    recording; it rings in sync via BroadcastChannel the moment checkout.html
+    gets a real voice_call_high_value decision back - no server round trip
+    needed for the sync itself, both tabs are just listening on the same
+    same-origin channel."""
+    return templates.TemplateResponse(request, "phone.html", {})
+
+
 @app.post("/api/cart-abandoned")
 async def cart_abandoned(request: Request):
     """Called by the tracking snippet when a customer stalls or leaves checkout.
