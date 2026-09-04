@@ -16,7 +16,6 @@
             <a href="/connect" style="font-size:0.85rem; color:var(--muted);">↳ See the merchant onboarding demo</a>
         </div>
         <form class="rerun-form" id="rerun-form" method="post" action="/rerun">
-            <button class="btn" name="mode" value="mock">Re-run (mock)</button>
             <button class="btn primary" name="mode" value="groq">Re-run (live Groq)</button>
         </form>
     </div>
@@ -231,9 +230,7 @@
             const clicked = e.submitter;
             if (!clicked) return;
             for (const btn of form.querySelectorAll("button")) btn.disabled = true;
-            clicked.textContent = clicked.value === "groq"
-                ? "Running live batch… (~5-8 min, page reloads when done)"
-                : "Running…";
+            clicked.textContent = "Running live batch… (~5-8 min, page reloads when done)";
             clicked.style.opacity = "0.75";
             clicked.style.cursor = "wait";
         });
