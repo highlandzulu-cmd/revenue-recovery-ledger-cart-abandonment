@@ -98,7 +98,10 @@ def _get_or_create_session(request: Request) -> str:
     session_id = request.cookies.get("session_id")
     if not session_id or session_id not in CARTS:
         session_id = str(uuid.uuid4())
-        CARTS[session_id] = {"items": {}, "customer": random.choice(DEMO_CUSTOMERS)}
+        # Fixed to one persona (was random.choice(DEMO_CUSTOMERS)) - a demo
+        # recording wants one consistent name across every screen, not a
+        # different customer every time the cart resets.
+        CARTS[session_id] = {"items": {}, "customer": DEMO_CUSTOMERS[2]}  # Ananya Iyer
     return session_id
 
 
