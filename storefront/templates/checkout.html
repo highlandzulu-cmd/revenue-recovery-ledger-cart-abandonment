@@ -37,6 +37,7 @@
             stall here reads as checkout friction, not price hesitation, and the
             agent responds differently than it would at the payment step.)
         </p>
+        <button id="preview-call-btn" class="btn" style="margin-top:10px; background:#2a1e12; border:1px solid #5a3d1f; color:#f5b971;" type="button">🎬 Preview incoming call (demo trigger)</button>
     </div>
 </div>
 
@@ -151,6 +152,13 @@
             endGroup.hidden = true;
             overlay.hidden = false;
         };
+
+        const previewBtn = document.getElementById("preview-call-btn");
+        if (previewBtn) {
+            previewBtn.addEventListener("click", () => {
+                window.showIncomingCall("{{ customer.name }}");
+            });
+        }
 
         function endCall() {
             audio.pause();
