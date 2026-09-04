@@ -163,7 +163,9 @@
                     {% elif e.dispatch_status == 'sent' %}✅ Sent via {{ e.dispatch_channel }}
                     {% else %}— no action needed{% endif %}
                 </span>
-                {% if e.razorpay_link %}
+                {% if e.razorpay_link and e.razorpay_link_reused %}
+                <a href="{{ e.razorpay_link }}" target="_blank" class="razorpay-pill" title="This account hit Razorpay's 30-link test-mode cap, so this reuses one of its own existing unpaid links rather than creating a new one - still real, still genuinely payable.">🔁 Real link (reused - cap hit)</a>
+                {% elif e.razorpay_link %}
                 <a href="{{ e.razorpay_link }}" target="_blank" class="razorpay-pill">🔗 Real payment link</a>
                 {% elif e.razorpay_error %}
                 <span class="pill">⚠️ Razorpay: {{ e.razorpay_error[:60] }}</span>

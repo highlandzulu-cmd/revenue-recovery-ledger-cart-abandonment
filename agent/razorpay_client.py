@@ -11,6 +11,7 @@ import time
 import razorpay
 
 _client = None
+_reuse_pool = None  # lazily-loaded list of this account's own still-unpaid links
 
 
 def _get_client():
@@ -20,8 +21,30 @@ def _get_client():
     return _client
 
 
+def _get_reuse_pool() -> list[dict]:
+    """This account's own real, still-unpaid links, fetched once and cached
+    for the life of the process. Test-mode accounts cap out at 30 total
+    payment links (a real, hard Razorpay limit, not something a code fix can
+    lift) - once that's hit, a live demo still needs *something* real and
+    clickable to show, so this reuses one of the account's own existing
+    links rather than fabricating a fake-looking URL or hard-failing."""
+    global _reuse_pool
+    if _reuse_pool is None:
+        client = _get_client()
+        try:
+            items = client.payment_link.all({"count": 30})["payment_links"]
+            _reuse_pool = [l for l in items if l["status"] == "created"]
+        except Exception:
+            _reuse_pool = []
+    return _reuse_pool
+
+
 def create_payment_link(case: dict) -> dict:
-    """Create a real (test-mode) Razorpay payment link for a failed-payment case."""
+    """Create a real (test-mode) Razorpay payment link for a failed-payment case.
+    Falls back to reusing one of this account's own existing unpaid links if the
+    30-link test-mode cap has been hit - result['reused'] says which happened,
+    so callers can be honest about it rather than presenting a reused link as a
+    freshly-created one."""
     client = _get_client()
     amount_paise = int(round(case["amount_inr"] * 100))
 
@@ -30,24 +53,28 @@ def create_payment_link(case: dict) -> dict:
     # is needed or every re-run after the first collides with the earlier link.
     reference_id = f"{case['case_id']}-{int(time.time())}"
 
-    link = client.payment_link.create(data={
-        "amount": amount_paise,
-        "currency": "INR",
-        "description": f"Recovery: {case['case_id']} - {case['subscription_tier']} subscription",
-        "reference_id": reference_id,
-        "notify": {"sms": False, "email": False},
-        "reminder_enable": False,
-        "notes": {
-            "case_id": case["case_id"],
-            "failure_code": case["failure_code"],
-        },
-    })
-
-    return {
-        "payment_link_id": link["id"],
-        "short_url": link["short_url"],
-        "status": link["status"],
-    }
+    try:
+        link = client.payment_link.create(data={
+            "amount": amount_paise,
+            "currency": "INR",
+            "description": f"Recovery: {case['case_id']} - {case['subscription_tier']} subscription",
+            "reference_id": reference_id,
+            "notify": {"sms": False, "email": False},
+            "reminder_enable": False,
+            "notes": {
+                "case_id": case["case_id"],
+                "failure_code": case["failure_code"],
+            },
+        })
+        return {"payment_link_id": link["id"], "short_url": link["short_url"], "status": link["status"], "reused": False}
+    except Exception as e:
+        if "test mode limit" not in str(e):
+            raise
+        pool = _get_reuse_pool()
+        if not pool:
+            raise
+        link = pool[int(time.time()) % len(pool)]  # spread reuse across the pool, not always the same one
+        return {"payment_link_id": link["id"], "short_url": link["short_url"], "status": link["status"], "reused": True}
 
 
 def fetch_payment_link_status(payment_link_id: str) -> dict:

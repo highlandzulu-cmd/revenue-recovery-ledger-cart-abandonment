@@ -257,6 +257,7 @@ async def cart_abandoned(request: Request):
 
     razorpay_link = None
     razorpay_link_id = None
+    razorpay_link_reused = False
     razorpay_error = None
     try:
         link = razorpay_client.create_payment_link({
@@ -267,6 +268,7 @@ async def cart_abandoned(request: Request):
         })
         razorpay_link = link["short_url"]
         razorpay_link_id = link["payment_link_id"]
+        razorpay_link_reused = link["reused"]
     except Exception as e:
         razorpay_error = razorpay_client.friendly_error(e)
 
@@ -294,6 +296,7 @@ async def cart_abandoned(request: Request):
         "customer_message": decision.get("customer_message"),
         "razorpay_link": razorpay_link,
         "razorpay_link_id": razorpay_link_id,
+        "razorpay_link_reused": razorpay_link_reused,
         "razorpay_error": razorpay_error,
         "dispatch_channel": dispatch_channel,
         # "simulated" until Twilio credentials are connected - the message/call
