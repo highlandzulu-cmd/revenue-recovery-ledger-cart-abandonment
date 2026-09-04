@@ -21,6 +21,8 @@
 {% else %}
 <p>Your cart is empty. <a href="/">Go shopping</a>.</p>
 {% endif %}
+
+{% include "_incoming_call.html" %}
 {% endblock %}
 
 {% block scripts %}
@@ -39,8 +41,18 @@
         inactivitySeconds: 8,
         graceSeconds: 8,
         payButtonId: "__no-pay-button-on-this-page__",
+        // Same routing as checkout.html - see static/incoming-call.js.
+        onReported: (data) => {
+            const payload = { customerMessage: data.customer_message, razorpayLink: data.razorpay_link };
+            if (data.dispatch_channel === "voice" && window.triggerIncomingCall) {
+                window.triggerIncomingCall(payload);
+            } else if (data.dispatch_channel === "whatsapp" && window.triggerIncomingMessage) {
+                window.triggerIncomingMessage(payload);
+            }
+        },
     };
 </script>
 <script src="/static/recovery-agent.js"></script>
+<script src="/static/incoming-call.js"></script>
 {% endif %}
 {% endblock %}
