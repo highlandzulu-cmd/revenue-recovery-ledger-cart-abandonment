@@ -223,7 +223,14 @@ async def cart_abandoned(request: Request):
     RECOVERY_EVENTS.insert(0, event)
     CONTACT_COUNTS[session_id] = contact_count + 1
 
-    return {"status": "processed", "event_id": event["event_id"]}
+    return {
+        "status": "processed",
+        "event_id": event["event_id"],
+        "final_action": event["final_action"],
+        "dispatch_channel": event["dispatch_channel"],
+        "customer_message": event["customer_message"],
+        "customer_name": case["customer_name"],
+    }
 
 
 def _decide(case: dict) -> dict:

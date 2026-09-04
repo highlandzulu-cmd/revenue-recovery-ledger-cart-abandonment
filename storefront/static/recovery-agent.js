@@ -58,17 +58,29 @@
             abandonment_stage: config.abandonmentStage || "checkout_started",
         });
 
-        if (navigator.sendBeacon) {
+        // A closing tab can't stick around for a response, so it gets the
+        // fire-and-forget beacon - but every other reason (inactivity, tab
+        // hidden) fires while the page is very much still alive, so those use
+        // a real fetch and hand the decision back to whoever's listening
+        // (config.onReported) - e.g. to trigger an on-page "incoming call".
+        if (reason === "tab_closed" && navigator.sendBeacon) {
             navigator.sendBeacon(endpoint, new Blob([payload], { type: "application/json" }));
-        } else {
-            fetch(endpoint, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: payload,
-                keepalive: true,
-            });
+            console.log("[recovery-agent] abandonment confirmed and reported (" + reason + ")");
+            return;
         }
-        console.log("[recovery-agent] abandonment confirmed and reported (" + reason + ")");
+
+        fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+            keepalive: true,
+        })
+            .then((res) => res.json())
+            .then((data) => {
+                console.log("[recovery-agent] abandonment confirmed and reported (" + reason + ")", data);
+                if (typeof config.onReported === "function") config.onReported(data);
+            })
+            .catch((err) => console.error("[recovery-agent] report failed", err));
     }
 
     function cancelPending() {
