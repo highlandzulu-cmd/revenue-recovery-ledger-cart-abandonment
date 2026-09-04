@@ -136,6 +136,21 @@ def add_to_cart(request: Request, product_id: str = Form(...)):
     return response
 
 
+@app.post("/cart/clear")
+def clear_cart(request: Request):
+    """Empties the current session's cart AND resets its contact count -
+    useful for testing a clean, specific cart total on a genuine first touch
+    (no discount guardrail in the way) without starting a whole new session
+    (the session cookie is httponly, so it can't be cleared from JS to get
+    the same effect)."""
+    session_id = _get_or_create_session(request)
+    CARTS[session_id]["items"] = {}
+    CONTACT_COUNTS.pop(session_id, None)
+    response = RedirectResponse(url="/cart", status_code=303)
+    response.set_cookie("session_id", session_id, httponly=True)
+    return response
+
+
 @app.get("/cart", response_class=HTMLResponse)
 def view_cart(request: Request):
     session_id = _get_or_create_session(request)
