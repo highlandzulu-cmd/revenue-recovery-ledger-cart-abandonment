@@ -10,6 +10,7 @@ project, then creates a real (test-mode) Razorpay link at the approved price.
 Run with:
     uvicorn storefront.main:app --reload --port 8000
 """
+import asyncio
 import os
 import sys
 import uuid
@@ -62,6 +63,35 @@ CONTACT_COUNTS: dict[str, int] = {}  # session_id -> how many times we've alread
                                       # and bypass the no-discount-on-first-touch guardrail.
 VOICE_CALLS: dict[str, dict] = {}    # Twilio callSid -> {system_prompt, history} for a real,
                                       # in-progress ConversationRelay call.
+
+
+async def _poll_payment_links():
+    """Background loop: every 5s, checks every event with a real (unverified)
+    Razorpay link against the actual Razorpay API and flips it to a REAL
+    confirmed outcome the moment it's actually paid - this is what makes
+    /admin's payment status genuine for a link someone actually clicked and
+    paid, not just the simulated placeholder every other event starts with.
+    A real result always overrides the simulated guess once it lands."""
+    while True:
+        await asyncio.sleep(5)
+        for event in RECOVERY_EVENTS:
+            if not event.get("razorpay_link_id") or event.get("payment_verified"):
+                continue
+            try:
+                status = await asyncio.to_thread(
+                    razorpay_client.fetch_payment_link_status, event["razorpay_link_id"]
+                )
+            except Exception:
+                continue  # transient API error - just retry on the next tick
+            if status["status"] == "paid":
+                event["outcome"] = "converted"
+                event["amount_recovered"] = status["amount_paid"] / 100  # paise -> INR
+                event["payment_verified"] = True
+
+
+@app.on_event("startup")
+async def _start_background_tasks():
+    asyncio.create_task(_poll_payment_links())
 
 
 def _get_or_create_session(request: Request) -> str:
@@ -189,6 +219,7 @@ async def cart_abandoned(request: Request):
     amount_recovered = final_amount if outcome == "converted" else 0.0
 
     razorpay_link = None
+    razorpay_link_id = None
     razorpay_error = None
     try:
         link = razorpay_client.create_payment_link({
@@ -198,6 +229,7 @@ async def cart_abandoned(request: Request):
             "failure_code": "cart_abandoned",
         })
         razorpay_link = link["short_url"]
+        razorpay_link_id = link["payment_link_id"]
     except Exception as e:
         razorpay_error = razorpay_client.friendly_error(e)
 
@@ -224,12 +256,19 @@ async def cart_abandoned(request: Request):
         "reasoning": decision.get("reasoning"),
         "customer_message": decision.get("customer_message"),
         "razorpay_link": razorpay_link,
+        "razorpay_link_id": razorpay_link_id,
         "razorpay_error": razorpay_error,
         "dispatch_channel": dispatch_channel,
         # "simulated" until Twilio credentials are connected - the message/call
         # shown is exactly what WOULD go out, nothing here is faked or invented,
         # it just isn't actually transmitted yet.
         "dispatch_status": "simulated" if dispatch_channel != "none" else "no_action_needed",
+        # True only once _poll_payment_links below confirms a REAL payment via
+        # the Razorpay API - distinct from `outcome`, which starts out as a
+        # simulated placeholder (see cart_actions.simulate_outcome) so /admin
+        # always has something to show. A real payment always overrides the
+        # simulated guess the moment it's confirmed.
+        "payment_verified": False,
     }
     RECOVERY_EVENTS.insert(0, event)
     CONTACT_COUNTS[session_id] = contact_count + 1
@@ -241,6 +280,7 @@ async def cart_abandoned(request: Request):
         "dispatch_channel": event["dispatch_channel"],
         "customer_message": event["customer_message"],
         "customer_name": case["customer_name"],
+        "razorpay_link": razorpay_link,
     }
 
 

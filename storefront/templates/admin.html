@@ -117,6 +117,11 @@
                 <span class="pill {{ 'good' if e.outcome == 'converted' else '' }}">
                     {% if e.outcome == 'converted' %}✅ converted{% elif e.outcome == 'no_action_taken' %}— no action needed{% else %}❌ ignored{% endif %}
                 </span>
+                {% if e.payment_verified %}
+                <span class="pill good" title="Confirmed via a live Razorpay API check, not simulated">💳 Verified paid via Razorpay</span>
+                {% elif e.razorpay_link_id %}
+                <span class="pill" title="Checked against the real Razorpay API every 5s">⏳ Awaiting real payment</span>
+                {% endif %}
             </div>
 
             {% if e.guardrail_overridden %}

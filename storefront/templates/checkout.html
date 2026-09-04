@@ -72,7 +72,10 @@
         // open alongside it (see static/incoming-call.js).
         onReported: (data) => {
             if (data.final_action === "voice_call_high_value" && window.triggerIncomingCall) {
-                window.triggerIncomingCall();
+                window.triggerIncomingCall({
+                    customerMessage: data.customer_message,
+                    razorpayLink: data.razorpay_link,
+                });
             }
         },
     };

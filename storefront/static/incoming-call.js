@@ -14,6 +14,12 @@
 
     const channel = "BroadcastChannel" in window ? new BroadcastChannel("recovery-agent-calls") : null;
 
+    const callScreen = document.querySelector(".phone-screen");
+    const messageScreen = document.getElementById("phone-message-screen");
+    const messageText = document.getElementById("call-message-text");
+    const messageLink = document.getElementById("call-message-link");
+    const messageDoneBtn = document.getElementById("message-done-btn");
+
     const avatar = document.getElementById("ios-call-avatar");
     const subEl = document.getElementById("ios-call-sub");
     const timerEl = document.getElementById("ios-call-timer");
@@ -24,6 +30,10 @@
     const audio = document.getElementById("ios-call-audio");
     const clockEl = document.getElementById("ios-clock");
     let timerInterval = null;
+    // Set by triggerIncomingCall/the broadcast listener - what to text after
+    // the call, if anything. No payload (e.g. the plain preview button) means
+    // no follow-up message, same as there being nothing to actually send.
+    let currentPayload = null;
 
     function updateClock() {
         const now = new Date();
@@ -35,6 +45,8 @@
     setInterval(updateClock, 30000);
 
     function showIncomingCall() {
+        callScreen.hidden = false;
+        messageScreen.hidden = true;
         avatar.classList.add("ringing");
         subEl.textContent = "mobile";
         subEl.hidden = false;
@@ -46,10 +58,29 @@
         overlay.hidden = false;
     }
 
-    function endCall() {
+    // A text follows a real answered-and-ended call with something to say -
+    // not a decline (you never spoke), not a preview trigger (no real
+    // message/link exists for it).
+    function showFollowUpMessage() {
+        if (!currentPayload || !currentPayload.customerMessage) return false;
+        messageText.textContent = currentPayload.customerMessage;
+        if (currentPayload.razorpayLink) {
+            messageLink.href = currentPayload.razorpayLink;
+            messageLink.textContent = currentPayload.razorpayLink;
+            messageLink.hidden = false;
+        } else {
+            messageLink.hidden = true;
+        }
+        callScreen.hidden = true;
+        messageScreen.hidden = false;
+        return true;
+    }
+
+    function endCall(withMessage) {
         audio.pause();
         audio.currentTime = 0;
         if (timerInterval) clearInterval(timerInterval);
+        if (withMessage && showFollowUpMessage()) return; // overlay stays open, showing the text
         overlay.hidden = true;
     }
 
@@ -71,26 +102,32 @@
 
         audio.currentTime = 0;
         audio.play().catch(() => { /* no recording yet - call just stays quiet, same as a bad line */ });
-        audio.onended = () => setTimeout(endCall, 1200);
+        audio.onended = () => setTimeout(() => endCall(true), 1200);
     });
 
-    declineBtn.addEventListener("click", endCall);
-    endBtn.addEventListener("click", endCall);
+    declineBtn.addEventListener("click", () => endCall(false));
+    endBtn.addEventListener("click", () => endCall(true));
+    messageDoneBtn.addEventListener("click", () => { overlay.hidden = true; });
 
     // Public API: rings this tab AND every other same-origin tab that has
     // this script loaded (via BroadcastChannel - includes itself only if it
     // also listens below, which it does, so calling this here is enough).
-    window.triggerIncomingCall = function () {
+    // payload is optional: { customerMessage, razorpayLink }.
+    window.triggerIncomingCall = function (payload) {
+        currentPayload = payload || null;
         showIncomingCall();
-        if (channel) channel.postMessage({ type: "incoming_call" });
+        if (channel) channel.postMessage({ type: "incoming_call", payload: currentPayload });
     };
 
     if (channel) {
         channel.onmessage = (event) => {
-            if (event.data && event.data.type === "incoming_call") showIncomingCall();
+            if (event.data && event.data.type === "incoming_call") {
+                currentPayload = event.data.payload || null;
+                showIncomingCall();
+            }
         };
     }
 
     const previewBtn = document.getElementById("preview-call-btn");
-    if (previewBtn) previewBtn.addEventListener("click", window.triggerIncomingCall);
+    if (previewBtn) previewBtn.addEventListener("click", () => window.triggerIncomingCall());
 })();
