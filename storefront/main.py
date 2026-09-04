@@ -181,11 +181,30 @@ def checkout(request: Request):
 def phone_screen(request: Request):
     """Standalone 'customer's phone' screen - no storefront chrome, just the
     call UI. Open it in its own window/tab next to the storefront for a demo
-    recording; it rings in sync via BroadcastChannel the moment checkout.html
-    gets a real voice_call_high_value decision back - no server round trip
-    needed for the sync itself, both tabs are just listening on the same
-    same-origin channel."""
+    recording. Rings via two independent mechanisms - BroadcastChannel (from
+    the exact tab that triggered the event, instant, but only works if that
+    tab is still open) and polling /api/latest-dispatch below (works
+    regardless of which tab/page caused the abandonment, or whether it's
+    still open - this is the one that actually matters most in practice)."""
     return templates.TemplateResponse(request, "phone.html", {})
+
+
+@app.get("/api/latest-dispatch")
+def latest_dispatch():
+    """The most recent real voice/whatsapp dispatch event, if any - lets any
+    page poll for 'did a call/message just get decided' independent of which
+    tab/page actually triggered the /api/cart-abandoned call that decided it.
+    This is what makes ringing reliable instead of depending on one specific
+    tab staying open and alive at the right moment."""
+    for event in RECOVERY_EVENTS:
+        if event["dispatch_channel"] in ("voice", "whatsapp"):
+            return {
+                "event_id": event["event_id"],
+                "dispatch_channel": event["dispatch_channel"],
+                "customer_message": event["customer_message"],
+                "razorpay_link": event["razorpay_link"],
+            }
+    return {"event_id": None}
 
 
 @app.post("/api/cart-abandoned")

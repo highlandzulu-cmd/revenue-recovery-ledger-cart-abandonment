@@ -144,4 +144,29 @@
 
     const previewBtn = document.getElementById("preview-call-btn");
     if (previewBtn) previewBtn.addEventListener("click", () => window.triggerIncomingCall());
+
+    // Polling backstop: rings/texts this page for the latest real dispatch
+    // regardless of which tab/page actually triggered it or whether that tab
+    // is still open - BroadcastChannel above is instant but only reaches
+    // tabs that were open at the exact moment; this reaches any page that's
+    // just sitting on /phone, /cart, or /checkout, found any time later.
+    let lastSeenEventId = undefined; // undefined = haven't checked yet, don't fire on the first poll's backlog
+    async function pollLatestDispatch() {
+        try {
+            const res = await fetch("/api/latest-dispatch");
+            const data = await res.json();
+            if (lastSeenEventId === undefined) {
+                lastSeenEventId = data.event_id; // baseline - only react to events newer than this
+                return;
+            }
+            if (data.event_id && data.event_id !== lastSeenEventId) {
+                lastSeenEventId = data.event_id;
+                const payload = { customerMessage: data.customer_message, razorpayLink: data.razorpay_link };
+                if (data.dispatch_channel === "voice") window.triggerIncomingCall(payload);
+                else if (data.dispatch_channel === "whatsapp") window.triggerIncomingMessage(payload);
+            }
+        } catch (e) { /* transient - just retry next tick */ }
+    }
+    pollLatestDispatch();
+    setInterval(pollLatestDispatch, 3000);
 })();
