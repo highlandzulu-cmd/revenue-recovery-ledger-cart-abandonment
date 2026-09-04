@@ -73,6 +73,7 @@
         }
         callScreen.hidden = true;
         messageScreen.hidden = false;
+        overlay.hidden = false;
         return true;
     }
 
@@ -119,11 +120,24 @@
         if (channel) channel.postMessage({ type: "incoming_call", payload: currentPayload });
     };
 
+    // For a real dispatch that isn't a voice call (send_reminder_* -> a
+    // WhatsApp-style text, not a phone ringing) - jumps straight to the
+    // message screen, no ringing/accept step, since nothing actually rang.
+    window.triggerIncomingMessage = function (payload) {
+        currentPayload = payload || null;
+        showFollowUpMessage();
+        if (channel) channel.postMessage({ type: "incoming_message", payload: currentPayload });
+    };
+
     if (channel) {
         channel.onmessage = (event) => {
-            if (event.data && event.data.type === "incoming_call") {
+            if (!event.data) return;
+            if (event.data.type === "incoming_call") {
                 currentPayload = event.data.payload || null;
                 showIncomingCall();
+            } else if (event.data.type === "incoming_message") {
+                currentPayload = event.data.payload || null;
+                showFollowUpMessage();
             }
         };
     }

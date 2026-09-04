@@ -13,7 +13,10 @@ MAX_DISCOUNT_PCT = 10
 REPEAT_CUSTOMER_MAX_DISCOUNT_PCT = 5  # loyal customers shouldn't learn to expect a deal
 OFFER_EXPIRY_MINUTES = 120
 MIN_CART_VALUE_FOR_DISCOUNT_INR = 300  # below this, discount cost isn't worth it
-VOICE_CALL_MIN_CART_VALUE_INR = 3000  # voice reserved for high-value stragglers only
+VOICE_CALL_MIN_CART_VALUE_INR = 3000  # the AI's own voice_call_high_value proposal is
+                                       # allowed to stand at this value or above
+VOICE_CALL_FORCE_THRESHOLD_INR = 4000  # at or above this, a call is forced - not just
+                                       # allowed if the model happens to propose one
 
 
 @dataclass
@@ -45,6 +48,22 @@ def check(case: dict, decision: dict) -> CartGuardrailResult:
             reason=f"contact_count=0 (first touch); proposed '{proposed_action}' downgraded to "
                    f"a plain reminder - discounts and calls are reserved for a second "
                    f"confirmed non-response, not the first sign of hesitation.",
+        )
+
+    # High-value stragglers past the first touch get a call, full stop - not left
+    # to whatever the model happens to propose that run. The AI's own diagnosis
+    # (why they stalled, what to say) still drives everything else about the
+    # case; this only fixes the channel decision itself so it's a deterministic
+    # guarantee instead of a maybe, exactly like every other guardrail here.
+    if contact_count >= 1 and cart_value >= VOICE_CALL_FORCE_THRESHOLD_INR:
+        return CartGuardrailResult(
+            allowed_action="voice_call_high_value",
+            allowed_discount_pct=0,
+            overridden=(proposed_action != "voice_call_high_value"),
+            reason=f"cart value Rs{cart_value:.2f} is at or above "
+                   f"VOICE_CALL_FORCE_THRESHOLD_INR={VOICE_CALL_FORCE_THRESHOLD_INR} on a repeat "
+                   f"contact (contact_count={contact_count}); escalating straight to a call "
+                   f"regardless of what was proposed.",
         )
 
     # Voice calls are reserved for high-value carts - same "high-value stragglers"

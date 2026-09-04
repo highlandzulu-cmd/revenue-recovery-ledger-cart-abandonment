@@ -64,18 +64,18 @@
         // gets tracked and reported as otp_pending, instead of being silently
         // treated as "payment attempted, stop watching."
         payButtonId: "otp-submit-btn",
-        // Fires once the abandonment webhook actually responds. Only a real
-        // voice_call_high_value decision (guardrail-approved, same as
-        // everywhere else in this project) triggers anything - every other
-        // outcome is silent here, same as it would be for a real customer.
-        // triggerIncomingCall rings this tab AND any standalone /phone tab
-        // open alongside it (see static/incoming-call.js).
+        // Fires once the abandonment webhook actually responds - routes by
+        // the guardrail-approved dispatch_channel, same as everywhere else in
+        // this project (never off the raw model proposal). "none" (e.g.
+        // no_action / stop) shows nothing, same as a real customer would see
+        // nothing. Both trigger* calls also ring/text any standalone /phone
+        // tab open alongside this one (see static/incoming-call.js).
         onReported: (data) => {
-            if (data.final_action === "voice_call_high_value" && window.triggerIncomingCall) {
-                window.triggerIncomingCall({
-                    customerMessage: data.customer_message,
-                    razorpayLink: data.razorpay_link,
-                });
+            const payload = { customerMessage: data.customer_message, razorpayLink: data.razorpay_link };
+            if (data.dispatch_channel === "voice" && window.triggerIncomingCall) {
+                window.triggerIncomingCall(payload);
+            } else if (data.dispatch_channel === "whatsapp" && window.triggerIncomingMessage) {
+                window.triggerIncomingMessage(payload);
             }
         },
     };
