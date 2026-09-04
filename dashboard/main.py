@@ -7,6 +7,7 @@ Run with:
     uvicorn dashboard.main:app --reload --port 8502
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -20,6 +21,12 @@ from agent.pipeline import confidence_calibration, summarize
 
 BASE_DIR = Path(__file__).parent
 RESULTS_PATH = BASE_DIR.parent / "data" / "results.json"
+
+# The two agents are one system (see README's "The two agents" section) - this
+# is what lets each app link to the other instead of reading as unrelated
+# projects. Defaults to local dev ports; set STOREFRONT_URL once both are
+# deployed so the link keeps working there too.
+STOREFRONT_URL = os.environ.get("STOREFRONT_URL", "http://localhost:8000")
 
 app = FastAPI(title="Recovery Agent Dashboard")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -61,6 +68,7 @@ def index(request: Request):
         "promised": promised,
         "replies": replies,
         "calibration_buckets": confidence_calibration(results),
+        "storefront_url": STOREFRONT_URL,
     })
 
 

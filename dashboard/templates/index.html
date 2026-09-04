@@ -11,9 +11,17 @@
 
     <div class="masthead">
         <div class="masthead-left">
-            <div class="eyebrow">Track 03 · Failed-Payment Recovery Agent</div>
+            <div class="eyebrow">Track 03 · The Recovery Ledger · Post-payment agent</div>
             <h1>Recovery Agent — Batch Report</h1>
-            <a href="/connect" style="font-size:0.85rem; color:var(--muted);">↳ See the merchant onboarding demo</a>
+            <p style="font-size:0.85rem; color:var(--muted); max-width:48ch; margin:6px 0 0;">
+                One half of the system: recovers money after a recurring payment already
+                failed. The other half catches it earlier - before checkout is even
+                completed.
+            </p>
+            <div style="display:flex; gap:16px; margin-top:8px;">
+                <a href="{{ storefront_url }}/admin" style="font-size:0.85rem; color:var(--verdigris);">↳ See the cart-abandonment agent (Aura Store)</a>
+                <a href="/connect" style="font-size:0.85rem; color:var(--muted);">↳ Merchant onboarding demo</a>
+            </div>
         </div>
         <form class="rerun-form" id="rerun-form" method="post" action="/rerun">
             <button class="btn primary" name="mode" value="groq">Re-run (live Groq)</button>

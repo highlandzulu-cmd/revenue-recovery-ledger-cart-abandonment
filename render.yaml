@@ -3,6 +3,13 @@
 # creates both services below -> fill in the envVars marked sync:false (your real
 # keys, never committed) -> Apply. Free plan is enough for a demo (cold starts
 # after ~15 min idle - hit both URLs a minute before you actually need them live).
+#
+# STOREFRONT_URL / DASHBOARD_URL below are the two apps' cross-links to each
+# other (see README - they're one system, not two unrelated projects). Set to
+# Render's normal https://<service name>.onrender.com pattern for the names
+# below - correct as long as Render doesn't have to rename either service to
+# avoid a collision with someone else's existing service. Check both URLs
+# after your first deploy and fix these two values (redeploy) if it did.
 services:
   - type: web
     name: recovery-agent-dashboard
@@ -19,6 +26,8 @@ services:
         sync: false
       - key: RAZORPAY_KEY_SECRET
         sync: false
+      - key: STOREFRONT_URL
+        value: https://recovery-agent-storefront.onrender.com
 
   - type: web
     name: recovery-agent-storefront
@@ -33,3 +42,17 @@ services:
         sync: false
       - key: RAZORPAY_KEY_SECRET
         sync: false
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_API_KEY_SID
+        sync: false
+      - key: TWILIO_API_KEY_SECRET
+        sync: false
+      - key: TWILIO_VOICE_NUMBER
+        sync: false
+      - key: TEST_PHONE_NUMBER
+        sync: false
+      - key: DASHBOARD_URL
+        value: https://recovery-agent-dashboard.onrender.com

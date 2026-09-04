@@ -36,6 +36,12 @@ app = FastAPI(title="Demo Store")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
+# The two agents are one system (see README's "The two agents" section) - lets
+# /admin link back to the failed-payment side instead of reading as an
+# unrelated project. Defaults to local dev ports; set DASHBOARD_URL once both
+# are deployed so the link keeps working there too.
+DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:8502")
+
 # A real store already knows who's checking out - the customer is logged in, and
 # the merchant's backend already has their name/WhatsApp number from their account.
 # This is what a real integration's identify() call would provide (see the
@@ -284,6 +290,7 @@ def admin(request: Request):
     }
     return templates.TemplateResponse(request, "admin.html", {
         "events": events, "stats": stats, "calibration_buckets": calibration_buckets,
+        "dashboard_url": DASHBOARD_URL,
     })
 
 
